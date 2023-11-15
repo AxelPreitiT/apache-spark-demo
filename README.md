@@ -1,4 +1,4 @@
-# ingsoft2-tpe-spark
+# Demo Ing. Software 2 TPE-Spark
 
 Demo de Apache Spark para la materia 72.40 - Ingenieria del Software II del ITBA.
 Contiene diversos ejemplos para mostrar el potencial de cómputo distribuido de Spark.
@@ -6,10 +6,111 @@ Contiene diversos ejemplos para mostrar el potencial de cómputo distribuido de 
 ### Requisitos
 
 * [Apache Spark](https://spark.apache.org/)
-* [Python 3](https://www.python.org/)
-* [pip](https://pypi.org/project/pip/)
+* [Docker](https://www.docker.com/)
 
-### Consideraciones
+
+## Ejecución
+
+### Word count distribuído
+Para esta prueba, se buscará implementar de manera distribuida un word counter para el guión de una película. En este caso será necesaria la utilización de Docker, y se utilizara 
+#### Nodo Master
+Para la configuración del nodo master, moverse a la carpeta de spark y levantar el proceso.
+```bash
+cd <directorio_spark>/sbin
+
+./start-master.sh -h 0.0.0.0
+```
+
+Una vez levantada la instancia de Master, el resto de los nodos Workers pueden conectarse
+
+Para ver los workers conectados se sugiere revisar http://localhost:8080/
+
+
+Cuando todos los nodos workers se hayan conectado dirigirse a la carpeta /bin y levantar una consola de Scala
+```bash
+cd ./../bin
+
+./spark-shell --master spark://<IP propia>:7077
+```
+
+Una vez en la consola proceder a realizar el word count en Scala
+
+```scala
+val textFile = sc.textFile("/tmp/texts/HarryPotter.txt")
+
+val counts = textFile.flatMap(line => line.split(" ")).map(word => (word,1)).reduceByKey(_ + _)
+
+counts.collect()
+```
+
+Resulta necesario que el nodo master tenga el archivo a procesar en el path /tmp/texts/HarryPotter.txt
+
+
+#### Nodo Worker
+Para la configuración de los nodos workers, moverse a la carpeta de spark y levantar el proceso 
+```bash
+cd <directorio_spark>/sbin
+
+./start-worker.sh spark://<IP master>:7077
+```
+Para ver el estado de los trabajos asociados,se sugiere revisar http://localhost:8081/
+
+
+Resulta necesario que todos los nodos workers tengan el archivo a procesar en el path /tmp/texts/HarryPotter.txt
+
+### Calculo de PI distribuido
+En esta prueba se intentará estimar el valor de PI mediante el Método de Monte Carlo, distribuyendo los puntos a procesar entre todos los nodos.
+
+#### Nodo Master
+Para la configuración del nodo master, moverse a la carpeta de spark y levantar el proceso.
+```bash
+cd <directorio_spark>/sbin
+
+./start-master.sh -h 0.0.0.0
+```
+
+Una vez levantada la instancia de Master, el resto de los nodos Workers pueden conectarse
+
+Para ver los workers conectados se sugiere revisar http://localhost:8080/
+
+
+Cuando todos los nodos workers se hayan conectado dirigirse a la carpeta /bin y levantar una consola de Scala
+```bash
+cd ./../bin
+
+./spark-shell --master spark://<IP propia>:7077
+```
+Una vez en la consola proceder a realizar el cálculo de PI en scala
+
+```scala
+val NUM_SAMPLES=100000000
+
+val count = sc.parallelize(1 to NUM_SAMPLES).filter { _ =>
+  val x = math.random
+  val y = math.random
+  x*x + y*y < 1
+}.count()
+
+println(s"Pi es casi ${4.0 * count / NUM_SAMPLES}")
+```
+
+
+#### Nodo Worker
+En este caso, vamos a hacer el procedimiento con docker. En primer lugar descargamos la imagen
+```bash
+docker pull spark
+```
+Luego, creamos el contenedor 
+```bash
+docker run -it --rm -p 8081:8081 spark bash
+```
+Adentro del contenedor, nos registramos con el nodo master
+```bash
+cd ..
+./sbin/start-worker.sh spark://<ip_master>:7077
+```
+
+## Consideraciones
 Cuando se ejecuta un nuevo trabajo distribuido en el cluster, Spark ofrece una interfaz que permite monitorear el estado de la ejecución y analizar métricas de performance.
 Sin embargo, cuando este trabaja finaliza, Spark deja de ofrecer esta interfaz y ya no es posible acceder a las métricas de performance.
 Por lo tanto, para poder seguir analizandolo y no perder esa información, se debe configurar Apache Spark para que genere un archivo de logs con la información de la aplicación ejecutada y levantar un servidor web para reconstruir la interfaz de monitoreo.
@@ -60,96 +161,12 @@ Si se desea detener el servidor web, se debe ejecutar el siguiente comando desde
 
 Para más información, consultar la [documentación oficial](https://spark.apache.org/docs/latest/monitoring.html) de Apache Spark.
 
-### Ejecución
-#### Nodo master
-Para levantar el nodo master, se debe ejecutar el siguiente comando desde el directorio ``sbin`` de Spark:
-```bash
-./start-master.sh -h 0.0.0.0
-```
-Se levantará un servidor web en la dirección ``http://localhost:8080`` donde se podrá monitorear el estado de los nodos workers y las aplicaciones ejecutadas.
 
-En la salida se informará la ubicación del archivo de logs que genera el nodo master, por ejemplo:
-```bash
-starting org.apache.spark.deploy.master.Master, logging to /mnt/c/Users/Axel/Downloads/spark-3.5.0-bin-hadoop3/logs/spark-axel-preitit-org.apache.spark.deploy.master.Master-1-DESKTOP-K6FJ9D4.out
-```
-Se recomienda utilizar el comando ``tail -f`` para monitorear el archivo de logs:
-```bash
-tail -f /mnt/c/Users/Axel/Downloads/spark-3.5.0-bin-hadoop3/logs/spark-axel-preitit-org.apache.spark.deploy.master.Master-1-DESKTOP-K6FJ9D4.out
-```
-
-Si se desea detener el nodo master, se debe ejecutar el siguiente comando desde el directorio ``sbin`` de Spark:
-```bash
-./stop-master.sh
-```
-
-#### Nodo worker
-Para levantar un nodo worker, se debe ejecutar el siguiente comando desde el directorio ``sbin`` de Spark:
-```bash
-./start-worker.sh spark://<master-ip>:7077 -m [memory] -c [cores]
-```
-En ``<master-ip>`` se debe indicar la dirección IP del nodo master.
-En ``[memory]`` se debe indicar la cantidad de memoria RAM que se le asignará al nodo worker.
-En ``[cores]`` se debe indicar la cantidad de cores que se le asignará al nodo worker.
-Una vez levantado el nodo worker, se podrá monitorear su estado desde la interfaz web del nodo master, en la dirección ``http://localhost:8080``.
-
-En la salida se informará la ubicación del archivo de logs que genera el nodo worker, por ejemplo:
-```bash
-starting org.apache.spark.deploy.worker.Worker, logging to /mnt/c/Users/Axel/Downloads/spark-3.5.0-bin-hadoop3/logs/spark-axel-preitit-org.apache.spark.deploy.worker.Worker-1-DESKTOP-K6FJ9D4.out
-```
-Se recomienda utilizar el comando ``tail -f`` para monitorear el archivo de logs:
-```bash
-tail -f /mnt/c/Users/Axel/Downloads/spark-3.5.0-bin-hadoop3/logs/spark-axel-preitit-org.apache.spark.deploy.worker.Worker-1-DESKTOP-K6FJ9D4.out
-```
-
-Si se desea detener el nodo worker, se debe ejecutar el siguiente comando desde el directorio ``sbin`` de Spark:
-```bash
-./stop-worker.sh
-```
-
-#### Aplicación
-##### `src/rangeCollector.py`
-Este script permite distribuir la carga de procesamiento para la generación de un rango de números.
-Para ejecutarlo en el cluster de Spark, se debe ejecutar el siguiente comando desde el directorio `bin` de Spark:
-```bash
-./spark-submit --master spark://<master-ip>:7077 [Ubicación del repo]/src/rangeCollector.py [limit]
-```
-__Parámetros:__
-- ``<master-ip>``: Dirección IP del nodo master.
-- ``[limit]``: Límite superior del rango de números a generar.
-
-Devolverá un archivo en el directorio `src/results` con el rango de números generado, con el nombre `range_<limit>.txt`.
-
-
-##### `src/piEstimator.py`
-Este script permite estimar el valor de pi utilizando el método de Monte Carlo.
-Para ejecutarlo en el cluster de Spark, se debe ejecutar el siguiente comando desde el directorio `bin` de Spark:
-```bash
-./spark-submit --master spark://<master-ip>:7077 [Ubicación del repo]/src/piEstimator.py [samples]
-```
-__Parámetros:__
-- ``<master-ip>``: Dirección IP del nodo master.
-- ``[samples]``: Cantidad de muestras a utilizar para la estimación.
-
-Devolverá un archivo en el directorio `src/results` con el valor estimado de pi, con el nombre `pi_<samples>.txt`.
-
-
-##### `src/wordCounter.py`
-Este script permite contar la cantidad de apariciones de cada palabra en un archivo de texto.
-Para ejecutarlo en el cluster de Spark, se debe ejecutar el siguiente comando desde el directorio `bin` de Spark:
-```bash
-./spark-submit --master spark://<master-ip>:7077 [Ubicación del repo]/src/wordCounter.py [path]
-```
-__Parámetros:__
-- ``<master-ip>``: Dirección IP del nodo master.
-- ``[path]``: Ruta al archivo de texto.
-
-Devolverá un archivo en el directorio `src/results` con la cantidad de apariciones de cada palabra, con el nombre `wordCounter_<path>.txt`.
-
-
-### Contribuidores
+## Contribuidores
 * [Alejo Flores Lucey](https://github.com/alejofl)
 * [José Mentasti](https://github.com/JoseMenta)
 * [Nehuén Llanos](https://github.com/NehuenLlanos)
 * [Andrés Carro Wetzel](https://github.com/AndresCarro)
 * [Gastón Francois](https://github.com/francoisgaston)
 * [Axel Preiti Tasat](https://github.com/AxelPreitiT)
+
